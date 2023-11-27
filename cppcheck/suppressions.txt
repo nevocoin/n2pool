@@ -1,0 +1,4 @@
+unmatchedSuppression
+missingIncludeSystem
+unusedFunction
+useStlAlgorithm

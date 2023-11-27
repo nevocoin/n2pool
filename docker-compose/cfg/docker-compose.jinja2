@@ -1,0 +1,187 @@
+---
+version: '3.4'
+
+networks:
+  n2pool:
+    driver: bridge
+
+volumes:
+  n2pool: 
+{% if sidechain[0] == 0 %}
+    name: n2pool
+{% else %}
+    name: n2pool-mini
+{% endif %}
+
+{% if configure_monero == True %}
+  monero:
+    name: monero
+{% endif %}
+
+services:
+  n2pool:
+    image: n2pool:latest
+    build: ../
+    container_name: n2pool-n2pool
+    networks:
+      - n2pool
+    privileged: true
+    ports:
+{% if sidechain[0] == 0 %}
+      - 41519:41519/tcp
+{% else %}
+      - 41518:41518/tcp
+{% endif %}
+{% if expose_stratum_port == True %}
+      - {{ stratum_port }}:3333/tcp
+{% endif %}
+    volumes:
+      - n2pool:/home/n2pool/.n2pool:rw
+      - /dev/null:/home/n2pool/.n2pool/n2pool.log:rw
+      - /dev/hugepages:/dev/hugepages:rw
+{% if configure_monero == True %}
+    depends_on:
+      - monero
+{% endif %}
+    restart: unless-stopped
+    command: >-
+{% if configure_monero == True %}
+      --host monero
+{% else %}
+      --host {{ public_monero_node }}
+      --rpc-login {{ monero_node_login }}
+{% endif %}
+      --wallet {{ wallet_address }}
+      --loglevel {{ p2pool_log_level | int }}
+{% if sidechain[0] == 1 %}
+      --mini
+{% endif %}
+{% if enable_autodiff == False %}
+      --no-autodiff
+{% endif %}
+{% if enable_statistics == True %}
+      --local-api
+      --data-api /home/n2pool/.n2pool
+{% endif %}
+{% if light_mode == True %}
+      --light-mode
+{% endif %}
+{% if no_cache == True %}
+      --no-cache
+{% endif %}
+{% if rpc_login != "" %}
+      --rpc-login {{ rpc_login }}
+{% endif %}
+{% if p2pool_options != "" %}
+      {{ p2pool_options }}
+{% endif %}
+
+
+{% if enable_statistics == True %}
+  statistics:
+    image: statistics:latest
+    build:
+      context: statistics
+    container_name: n2pool-statistics
+    networks:
+      - n2pool
+    ports:
+      - {{ statistics_port }}:80/tcp
+    volumes:
+      - n2pool:/data:ro
+    depends_on:
+      - n2pool
+    restart: unless-stopped
+{% endif %}
+
+
+{% if configure_monero == True %}
+  monero:
+    image: monero:latest
+    build:
+      context: monero
+      args:
+        - MONERO_GIT_TAG={{ monero_version }}
+    container_name: n2pool-monero
+    networks:
+      - n2pool
+    ports:
+      - 18080:18080/tcp
+{% if expose_rpc_port == True %}
+      - {{ rpc_port }}:44231/tcp
+      - 44233:44233/tcp
+{% endif %}
+    volumes:
+      - monero:/home/monero/.bitmonero:rw
+      - /dev/null:/home/monero/.bitmonero/bitmonero.log:rw
+      - /dev/hugepages:/dev/hugepages:rw
+    restart: unless-stopped
+    command: >-
+      --zmq-pub tcp://0.0.0.0:44233
+      --disable-dns-checkpoints
+      --enable-dns-blocklist
+      --out-peers 16
+      --in-peers 32
+      --add-priority-node=nodes.hashvault.pro:18080
+      --add-priority-node=p2pmd.xmrvsbeast.com:18080
+      --non-interactive
+      --p2p-bind-ip=0.0.0.0
+      --p2p-bind-port=18080
+      --rpc-bind-ip=0.0.0.0
+      --rpc-bind-port=44231
+      --restricted-rpc
+      --confirm-external-bind
+      --log-level={{ monero_log_level | int }}
+{% if prune_blockchain == True %}
+      --prune-blockchain
+{% if sync_pruned_blocks == True %}
+      --sync-pruned-blocks
+{% endif %}
+{% endif %}
+{% if rpc_login != "" %}
+      --rpc-login {{ rpc_login }}
+{% endif %}
+{% if limit_data_rates == True %}
+      --limit-rate-up {{ rate_limit_up }}
+      --limit-rate-down {{ rate_limit_down }}
+{% endif %}
+{% if fast_sync == True %}
+      --fast-block-sync=1
+{% else %}
+      --fast-block-sync=0
+{% endif %}
+{% if monero_options != "" %}
+      {{ monero_options }}
+{% endif %}
+{% endif %}
+
+
+{% if configure_xmrig == True %}
+  xmrig:
+    image: xmrig:latest
+    build: xmrig
+    container_name: n2pool-xmrig
+    networks:
+      - n2pool
+    privileged: true
+    volumes:
+      - /dev:/dev:ro
+      - /lib/modules:/lib/modules:ro
+      - /dev/hugepages:/dev/hugepages:rw
+    depends_on:
+      - n2pool
+    restart: unless-stopped
+    command: >-
+      --randomx-1gb-pages
+      -o n2pool:3333
+{% if enable_autodiff == False and use_fixed_difficulty == True %}
+      -u {{ xmrig_username }}+{{ fixed_difficulty | int }}
+{% else %}
+      -u {{ xmrig_username }}
+{% endif %}
+      --cpu-max-threads-hint={{ cpu_percent | int }}
+      --cpu-priority={{ cpu_priority | int }}
+{% if xmrig_options != "" %}
+      {{ xmrig_options }}
+{% endif %}
+{% endif %}
